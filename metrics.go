@@ -6,6 +6,8 @@ import (
 
 const namespace = "victron"
 
+// Prometheus metrics exported by the exporter. These provide insight into
+// connection health and the volume of MQTT subscription updates handled.
 var (
 	connectionStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: namespace,

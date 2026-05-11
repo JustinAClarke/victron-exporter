@@ -4,10 +4,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// mqttObserver describes the callback that maps a component type, component id,
+// and numeric value into a Prometheus metric update.
 type mqttObserver func(componentType string, componentId string, value float64)
 
 var labels = []string{"component_type", "component_id"}
 
+// gaugeObserver creates a Prometheus gauge vector for a metric and returns an
+// observer function that sets the gauge value for a specific component.
 func gaugeObserver(opts prometheus.GaugeOpts) mqttObserver {
 	opts.Namespace = namespace
 	gauge := prometheus.NewGaugeVec(opts, labels)
@@ -18,6 +22,8 @@ func gaugeObserver(opts prometheus.GaugeOpts) mqttObserver {
 	}
 }
 
+// counterObserver creates a Prometheus counter vector and returns an observer
+// that converts increasing raw values into delta increments for the counter.
 func counterObserver(opts prometheus.CounterOpts) mqttObserver {
 	opts.Namespace = namespace
 	counter := prometheus.NewCounterVec(opts, labels)
@@ -40,6 +46,8 @@ func counterObserver(opts prometheus.CounterOpts) mqttObserver {
 	}
 }
 
+// alarm returns an observer for simple Victron alarm topics. Alarm metrics are
+// exposed as a gauge with a constant alarm_type label.
 func alarm(alarmType string) mqttObserver {
 	gauge := prometheus.GaugeOpts{
 		Name:        "alarm",
@@ -50,6 +58,8 @@ func alarm(alarmType string) mqttObserver {
 	return gaugeObserver(gauge)
 }
 
+// phaseAlarm returns an observer for phase-specific alarm topics using a gauge
+// metric that includes both phase and alarm_type labels.
 func phaseAlarm(phase string, alarmType string) mqttObserver {
 	gauge := prometheus.GaugeOpts{
 		Name:        "phase_alarm",
@@ -63,6 +73,10 @@ func phaseAlarm(phase string, alarmType string) mqttObserver {
 // These paths are documented at
 // https://github.com/victronenergy/venus/wiki/dbus
 
+// suffixTopicMap maps the remainder of a Victron MQTT topic after the device
+// prefix to a metric observer. Only mapped topics are exported; others are ignored.
+// The map is intentionally conservative to avoid exposing unsupported or noisy
+// topic paths.
 var suffixTopicMap = map[string]mqttObserver{
 	"Ac/ActiveIn/Source": gaugeObserver(
 		prometheus.GaugeOpts{
@@ -1064,6 +1078,11 @@ var suffixTopicMap = map[string]mqttObserver{
 	"Dc/Battery/Temperature": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "dc_battery_temperature_celsius",
+			Help: "",
+		}),
+	"Gps/Speed": gaugeObserver(
+		prometheus.GaugeOpts{
+			Name: "gps_speed_kmh",
 			Help: "",
 		}),
 }
