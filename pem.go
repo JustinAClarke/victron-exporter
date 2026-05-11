@@ -1,5 +1,9 @@
 package main
 
+// rootPEM contains the built-in Victron root certificate used to verify the
+// TLS connection to the Victron MQTT broker. Bundling the certificate ensures
+// the exporter can securely connect even when the host system does not have
+// the certificate installed in its default trust store.
 const rootPEM = `
 -----BEGIN CERTIFICATE-----
 MIIECTCCAvGgAwIBAgIJAM+t3iC8ybEHMA0GCSqGSIb3DQEBCwUAMIGZMQswCQYD
