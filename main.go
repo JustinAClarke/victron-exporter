@@ -91,6 +91,8 @@ func main() {
 	// and to trigger state updates for some devices.
 	timer := time.NewTicker(*pollInterval)
 	for range timer.C {
+		collectRuntimeMetrics()
+
 		if !client.IsConnectionOpen() {
 			log.Debug("mqtt connection not yet established")
 
