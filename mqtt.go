@@ -206,6 +206,7 @@ func mqttSubscriptionHandler(client mqtt.Client, msg mqtt.Message) {
 
 	o, ok := suffixTopicMap[topicString]
 	if !ok {
+		log.Debug("mqtt topic '", topicString, "' not mapped to a metric, ignoring: ", topic)
 		subscriptionsUpdatesIgnoredTotal.Inc()
 
 		return
