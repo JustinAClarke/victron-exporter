@@ -1080,9 +1080,14 @@ var suffixTopicMap = map[string]mqttObserver{
 			Name: "dc_battery_temperature_celsius",
 			Help: "",
 		}),
-	"Gps/Speed": gaugeObserver(
+	"Speed": gaugeObserver(
 		prometheus.GaugeOpts{
 			Name: "gps_speed_kmh",
+			Help: "",
+		}),
+	"Altitude": gaugeObserver(
+		prometheus.GaugeOpts{
+			Name: "gps_altitude_meters",
 			Help: "",
 		}),
 }
