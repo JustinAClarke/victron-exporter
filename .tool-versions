@@ -1,4 +1,4 @@
-golang 1.17.11
+golang 1.26
 goreleaser 1.9.2
 golangci-lint 1.41.1
 pre-commit 2.19.0
