@@ -238,6 +238,19 @@ INFO[0000] mqtt connected, subscribing to topics...
 INFO[0000] mqtt connected                                client_id=victron_exporter_pub
 ```
 
+## Development
+
+This project is maintained with Go 1.26 and includes a GitHub Actions workflow for formatting, linting, and testing.
+
+Run the following commands locally to verify the repository:
+
+```console
+$ gofmt -w .
+$ go mod tidy
+$ go vet ./...
+$ go test ./...
+```
+
 ## Hacking on `victron-exporter`
 
 1. This project uses [`asdf`](https://asdf-vm.com/) for tool version management. All the build dependencies should be expressed in the `.tool-versions` file. Once you have `asdf` setup, run `scripts/install-asdf-plugins.sh` to install all required `asdf` plugins.

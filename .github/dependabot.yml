@@ -9,6 +9,7 @@ updates:
     schedule:
       interval: "weekly"
       day: "sunday"
+    target-branch: main
 
   # Maintain dependencies for go modules
   - package-ecosystem: "gomod"
@@ -16,3 +17,4 @@ updates:
     schedule:
       interval: "weekly"
       day: "sunday"
+    target-branch: main
