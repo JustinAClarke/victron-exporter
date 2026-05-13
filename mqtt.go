@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net"
 	"strings"
 	"time"
 
@@ -14,33 +15,29 @@ import (
 )
 
 // newTLSConfig constructs a TLS configuration for secure MQTT connections.
-// It uses the bundled Victron root certificate to validate the MQTT server.
-func newTLSConfig() *tls.Config {
-	// First, create the set of root certificates. For this example we only
-	// have one. It's also possible to omit this in order to use the
-	// default root set of the current operating system.
+// It loads the bundled Victron root certificate and uses it to validate
+// certificate chains when connecting to a hostname. When the broker is
+// configured as a raw IP address, hostname verification is disabled because
+// many Victron MQTT certificates do not include IP SANs.
+func newTLSConfig(host string) *tls.Config {
 	roots := x509.NewCertPool()
 	ok := roots.AppendCertsFromPEM([]byte(rootPEM))
 	if !ok {
 		panic("failed to parse root certificate")
 	}
 
-	// Create tls.Config with desired tls properties
-	return &tls.Config{
-		// RootCAs = certs used to verify server cert.
+	cfg := &tls.Config{
 		RootCAs: roots,
-		// ClientAuth = whether to request cert from server.
-		// Since the server is set up for SSL, this happens
-		// anyways.
-		ClientAuth: tls.NoClientCert,
-		// ClientCAs = certs used to validate client cert.
-		ClientCAs: nil,
-		// InsecureSkipVerify = verify that cert contents
-		// match server. IP matches what is in cert etc.
-		InsecureSkipVerify: true, //nolint:gosec
-		// // Certificates = list of certs client sends to server.
-		// Certificates: []tls.Certificate{cert},
 	}
+
+	if net.ParseIP(host) == nil {
+		cfg.ServerName = host
+		cfg.InsecureSkipVerify = false
+	} else {
+		cfg.InsecureSkipVerify = true //nolint:gosec
+	}
+
+	return cfg
 }
 
 // mqttConnectionConfig stores configuration values required to connect to the
@@ -136,7 +133,7 @@ func createClientOptions(clientID string, config mqttConnectionConfig, onConnect
 
 	if config.secure {
 		opts.AddBroker(fmt.Sprintf("ssl://%s:%d", config.host, config.port))
-		opts.SetTLSConfig(newTLSConfig())
+		opts.SetTLSConfig(newTLSConfig(config.host))
 	} else {
 		opts.AddBroker(fmt.Sprintf("tcp://%s:%d", config.host, config.port))
 	}
