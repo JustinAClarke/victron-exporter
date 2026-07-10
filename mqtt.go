@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net"
 	"strings"
 	"time"
 
@@ -13,34 +14,34 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func newTLSConfig() *tls.Config {
-	// First, create the set of root certificates. For this example we only
-	// have one. It's also possible to omit this in order to use the
-	// default root set of the current operating system.
+// newTLSConfig constructs a TLS configuration for secure MQTT connections.
+// It loads the bundled Victron root certificate and uses it to validate
+// certificate chains when connecting to a hostname. When the broker is
+// configured as a raw IP address, hostname verification is disabled because
+// many Victron MQTT certificates do not include IP SANs.
+func newTLSConfig(host string) *tls.Config {
 	roots := x509.NewCertPool()
 	ok := roots.AppendCertsFromPEM([]byte(rootPEM))
 	if !ok {
 		panic("failed to parse root certificate")
 	}
 
-	// Create tls.Config with desired tls properties
-	return &tls.Config{
-		// RootCAs = certs used to verify server cert.
+	cfg := &tls.Config{
 		RootCAs: roots,
-		// ClientAuth = whether to request cert from server.
-		// Since the server is set up for SSL, this happens
-		// anyways.
-		ClientAuth: tls.NoClientCert,
-		// ClientCAs = certs used to validate client cert.
-		ClientCAs: nil,
-		// InsecureSkipVerify = verify that cert contents
-		// match server. IP matches what is in cert etc.
-		InsecureSkipVerify: true, //nolint:gosec
-		// // Certificates = list of certs client sends to server.
-		// Certificates: []tls.Certificate{cert},
 	}
+
+	if net.ParseIP(host) == nil {
+		cfg.ServerName = host
+		cfg.InsecureSkipVerify = false
+	} else {
+		cfg.InsecureSkipVerify = true //nolint:gosec
+	}
+
+	return cfg
 }
 
+// mqttConnectionConfig stores configuration values required to connect to the
+// Victron MQTT broker, including host, port, TLS, and credentials.
 type mqttConnectionConfig struct {
 	host     string
 	port     int
@@ -49,6 +50,8 @@ type mqttConnectionConfig struct {
 	password string
 }
 
+// connectWait blocks until the provided MQTT client finishes the connect attempt
+// or returns an error. It centralizes connect timeout handling.
 func connectWait(client mqtt.Client) error {
 	token := client.Connect()
 	for !token.WaitTimeout(3 * time.Second) {
@@ -62,12 +65,15 @@ func connectWait(client mqtt.Client) error {
 	return nil
 }
 
+// connect creates and synchronously connects an MQTT client for publishing.
 func connect(clientID string, config mqttConnectionConfig) (mqtt.Client, error) {
 	client := mqtt.NewClient(createClientOptions(clientID, config, nil))
 
 	return client, connectWait(client)
 }
 
+// listen creates an MQTT client that subscribes to topics after every successful
+// connection event. The topic argument is passed directly to Subscribe.
 func listen(clientID string, config mqttConnectionConfig, topic string) error {
 	log.WithFields(log.Fields{
 		"host": config.host,
@@ -86,6 +92,9 @@ func listen(clientID string, config mqttConnectionConfig, topic string) error {
 	return connectWait(client)
 }
 
+// newConnectionLostHandler returns a handler that is invoked when the MQTT
+// client loses its connection. It updates Prometheus metrics and logs the
+// failure so the exporter can be monitored.
 func newConnectionLostHandler(clientID string) mqtt.ConnectionLostHandler {
 	return func(c mqtt.Client, e error) {
 		log.WithFields(log.Fields{
@@ -96,6 +105,9 @@ func newConnectionLostHandler(clientID string) mqtt.ConnectionLostHandler {
 	}
 }
 
+// newConnectionHandler returns a handler invoked once the MQTT client reconnects.
+// It updates Prometheus metrics and optionally invokes a wrapped callback to
+// subscribe to topics or perform other initialization.
 func newConnectionHandler(clientID string, wrapped mqtt.OnConnectHandler) mqtt.OnConnectHandler {
 	return func(c mqtt.Client) {
 		log.WithField("client_id", clientID).Info("mqtt connected")
@@ -108,6 +120,8 @@ func newConnectionHandler(clientID string, wrapped mqtt.OnConnectHandler) mqtt.O
 	}
 }
 
+// createClientOptions constructs MQTT client options for the Eclipse Paho
+// library, enabling auto-reconnect, connection monitoring, and optional TLS.
 func createClientOptions(clientID string, config mqttConnectionConfig, onConnectionHandler mqtt.OnConnectHandler) *mqtt.ClientOptions {
 	opts := mqtt.NewClientOptions()
 	opts.SetAutoReconnect(true)
@@ -119,7 +133,7 @@ func createClientOptions(clientID string, config mqttConnectionConfig, onConnect
 
 	if config.secure {
 		opts.AddBroker(fmt.Sprintf("ssl://%s:%d", config.host, config.port))
-		opts.SetTLSConfig(newTLSConfig())
+		opts.SetTLSConfig(newTLSConfig(config.host))
 	} else {
 		opts.AddBroker(fmt.Sprintf("tcp://%s:%d", config.host, config.port))
 	}
@@ -138,14 +152,20 @@ func createClientOptions(clientID string, config mqttConnectionConfig, onConnect
 	return opts
 }
 
+// victronValue mirrors the JSON value payload used in most Victron MQTT messages.
+// The optional pointer allows the exporter to distinguish between null and zero.
 type victronValue struct {
 	Value *float64 `json:"value"`
 }
 
+// victronStringValue mirrors the payload used for string-based Victron MQTT values
+// such as the system serial number topic.
 type victronStringValue struct {
 	Value *string `json:"value"`
 }
 
+// mqttSubscriptionHandler parses messages arriving on subscribed Victron MQTT
+// topics, maps them to Prometheus metrics, and ignores unsupported topics.
 func mqttSubscriptionHandler(client mqtt.Client, msg mqtt.Message) {
 	subscriptionsUpdatesTotal.Inc()
 
@@ -183,6 +203,7 @@ func mqttSubscriptionHandler(client mqtt.Client, msg mqtt.Message) {
 
 	o, ok := suffixTopicMap[topicString]
 	if !ok {
+		log.Debug("mqtt topic '", topicString, "' not mapped to a metric, ignoring: ", topic)
 		subscriptionsUpdatesIgnoredTotal.Inc()
 
 		return

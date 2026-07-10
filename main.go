@@ -1,3 +1,5 @@
+// Package main wires together the Victron MQTT exporter with Prometheus metrics
+// and exposes an HTTP /metrics endpoint for scraping.
 package main
 
 import (
@@ -10,6 +12,9 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// systemSerialID caches the Victron system serial number once it is received from
+// the MQTT subscription stream. It is required to publish the periodic poll
+// request to the correct system topic.
 var systemSerialID = ""
 
 var (
@@ -50,6 +55,9 @@ var (
 		"Log level: 0=debug, 1=info, 2=warn, 3=error")
 )
 
+// main initializes the exporter by parsing configuration, starting the HTTP
+// metrics endpoint, establishing MQTT connectivity, and polling the Victron
+// system periodically to keep the MQTT topic subscription active.
 func main() {
 	flag.Parse()
 
@@ -57,6 +65,7 @@ func main() {
 
 	log.WithField("address", *listenAddress).Info("victron_exporter listening")
 
+	// Expose Prometheus metrics to be scraped at /metrics.
 	http.Handle("/metrics", promhttp.Handler())
 	go func() {
 		err := http.ListenAndServe(*listenAddress, nil)
@@ -78,8 +87,12 @@ func main() {
 		log.WithError(err).Fatal("failed to establish mqtt publish connection")
 	}
 
+	// The periodic publish is required to keep the Victron MQTT bus responding
+	// and to trigger state updates for some devices.
 	timer := time.NewTicker(*pollInterval)
 	for range timer.C {
+		collectRuntimeMetrics()
+
 		if !client.IsConnectionOpen() {
 			log.Debug("mqtt connection not yet established")
 
